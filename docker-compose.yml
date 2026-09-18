@@ -1,0 +1,122 @@
+version: "3.9"
+
+x-crdb-common: &crdb-common
+    image: cockroachdb/cockroach:v23.1.10
+    networks:
+        - ride-share-net
+    # CHANGE IS HERE: Added --max-offset=5s
+    command: start --insecure --max-offset=5s --join=roach-east-1,roach-west-1,roach-eu-central-1,roach-ap-south-1
+
+services:
+    # REGION 1: US-EAST (Ports 26201 - 26203)
+    roach-east-1:
+        <<: *crdb-common
+        container_name: roach-east-1
+        hostname: roach-east-1
+        command: start --insecure --locality=region=us-east,zone=us-east-1a --join=roach-east-1,roach-west-1,roach-eu-central-1,roach-ap-south-1
+        ports:
+            - "26201:26257"
+            - "8080:8080" # Admin UI
+
+    roach-east-2:
+        <<: *crdb-common
+        container_name: roach-east-2
+        hostname: roach-east-2
+        command: start --insecure --locality=region=us-east,zone=us-east-1b --join=roach-east-1,roach-west-1,roach-eu-central-1,roach-ap-south-1
+        ports:
+            - "26202:26257"
+
+    roach-east-3:
+        <<: *crdb-common
+        container_name: roach-east-3
+        hostname: roach-east-3
+        command: start --insecure --locality=region=us-east,zone=us-east-1c --join=roach-east-1,roach-west-1,roach-eu-central-1,roach-ap-south-1
+        ports:
+            - "26203:26257"
+
+    # REGION 2: US-WEST (Ports 26204 - 26206)
+    roach-west-1:
+        <<: *crdb-common
+        container_name: roach-west-1
+        hostname: roach-west-1
+        command: start --insecure --locality=region=us-west,zone=us-west-1a --join=roach-east-1,roach-west-1,roach-eu-central-1,roach-ap-south-1
+        ports:
+            - "26204:26257"
+
+    roach-west-2:
+        <<: *crdb-common
+        container_name: roach-west-2
+        hostname: roach-west-2
+        command: start --insecure --locality=region=us-west,zone=us-west-1b --join=roach-east-1,roach-west-1,roach-eu-central-1,roach-ap-south-1
+        ports:
+            - "26205:26257"
+
+    roach-west-3:
+        <<: *crdb-common
+        container_name: roach-west-3
+        hostname: roach-west-3
+        command: start --insecure --locality=region=us-west,zone=us-west-1c --join=roach-east-1,roach-west-1,roach-eu-central-1,roach-ap-south-1
+        ports:
+            - "26206:26257"
+
+    # REGION 3: EU-CENTRAL (Ports 26207 - 26209)
+    roach-eu-central-1:
+        <<: *crdb-common
+        container_name: roach-eu-central-1
+        hostname: roach-eu-central-1
+        command: start --insecure --locality=region=eu-central,zone=eu-central-1a --join=roach-east-1,roach-west-1,roach-eu-central-1,roach-ap-south-1
+        ports:
+            - "26207:26257"
+
+    roach-eu-central-2:
+        <<: *crdb-common
+        container_name: roach-eu-central-2
+        hostname: roach-eu-central-2
+        command: start --insecure --locality=region=eu-central,zone=eu-central-1b --join=roach-east-1,roach-west-1,roach-eu-central-1,roach-ap-south-1
+        ports:
+            - "26208:26257"
+
+    roach-eu-central-3:
+        <<: *crdb-common
+        container_name: roach-eu-central-3
+        hostname: roach-eu-central-3
+        command: start --insecure --locality=region=eu-central,zone=eu-central-1c --join=roach-east-1,roach-west-1,roach-eu-central-1,roach-ap-south-1
+        ports:
+            - "26209:26257"
+
+    # REGION 4: AP-SOUTH (Ports 26210 - 26212)
+    roach-ap-south-1:
+        <<: *crdb-common
+        container_name: roach-ap-south-1
+        hostname: roach-ap-south-1
+        command: start --insecure --locality=region=ap-south,zone=ap-south-1a --join=roach-east-1,roach-west-1,roach-eu-central-1,roach-ap-south-1
+        ports:
+            - "26210:26257"
+
+    roach-ap-south-2:
+        <<: *crdb-common
+        container_name: roach-ap-south-2
+        hostname: roach-ap-south-2
+        command: start --insecure --locality=region=ap-south,zone=ap-south-1b --join=roach-east-1,roach-west-1,roach-eu-central-1,roach-ap-south-1
+        ports:
+            - "26211:26257"
+
+    roach-ap-south-3:
+        <<: *crdb-common
+        container_name: roach-ap-south-3
+        hostname: roach-ap-south-3
+        command: start --insecure --locality=region=ap-south,zone=ap-south-1c --join=roach-east-1,roach-west-1,roach-eu-central-1,roach-ap-south-1
+        ports:
+            - "26212:26257"
+
+    # Adds 100ms latency to AP-SOUTH to simulate network issues
+    latency-simulator:
+        image: gaiaadm/pumba
+        command: netem --duration 2h --delay 100ms roach-ap-south-1 roach-ap-south-2 roach-ap-south-3
+        volumes:
+            - /var/run/docker.sock:/var/run/docker.sock
+        depends_on:
+            - roach-ap-south-1
+
+networks:
+    ride-share-net:

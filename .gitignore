@@ -1,0 +1,11 @@
+generated_data/
+__pycache__/
+.env
+.DS_Store
+.vscode/
+.idea/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+venv/

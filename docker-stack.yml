@@ -1,0 +1,127 @@
+version: "3.8"
+
+networks:
+    ride-share-net:
+        driver: overlay
+
+# Template to reduce repetition
+x-crdb-common: &crdb-common
+    image: cockroachdb/cockroach:v23.1.10
+    networks:
+        - ride-share-net
+    # Join one seed node from each region to form the mesh
+    command: start --insecure --max-offset=5s --join=roach-east-1,roach-west-1,roach-eu-central-1,roach-ap-south-1 --listen-addr=0.0.0.0:26257 --advertise-addr={{.Service.Name}}
+
+services:
+    # REGION 1: US-EAST (Node 1)
+    roach-east-1:
+        <<: *crdb-common
+        deploy:
+            placement:
+                constraints: [node.labels.region == us-east]
+        command: start --insecure --max-offset=5s --locality=region=us-east,zone=us-east-1a --join=roach-east-1,roach-west-1,roach-eu-central-1,roach-ap-south-1 --listen-addr=0.0.0.0:26257 --advertise-addr=roach-east-1
+        ports:
+            - "26201:26257" # External SQL Port
+            - "8080:8080" # Admin UI (Only exposing one per region to avoid conflict)
+
+    roach-east-2:
+        <<: *crdb-common
+        deploy:
+            placement:
+                constraints: [node.labels.region == us-east]
+        command: start --insecure --max-offset=5s --locality=region=us-east,zone=us-east-1b --join=roach-east-1,roach-west-1,roach-eu-central-1,roach-ap-south-1 --listen-addr=0.0.0.0:26257 --advertise-addr=roach-east-2
+        ports:
+            - "26202:26257"
+
+    roach-east-3:
+        <<: *crdb-common
+        deploy:
+            placement:
+                constraints: [node.labels.region == us-east]
+        command: start --insecure --max-offset=5s --locality=region=us-east,zone=us-east-1c --join=roach-east-1,roach-west-1,roach-eu-central-1,roach-ap-south-1 --listen-addr=0.0.0.0:26257 --advertise-addr=roach-east-3
+        ports:
+            - "26203:26257"
+
+    # REGION 2: US-WEST (Node 2)
+    roach-west-1:
+        <<: *crdb-common
+        deploy:
+            placement:
+                constraints: [node.labels.region == us-west]
+        command: start --insecure --max-offset=5s --locality=region=us-west,zone=us-west-1a --join=roach-east-1,roach-west-1,roach-eu-central-1,roach-ap-south-1 --listen-addr=0.0.0.0:26257 --advertise-addr=roach-west-1
+        ports:
+            - "26204:26257"
+
+    roach-west-2:
+        <<: *crdb-common
+        deploy:
+            placement:
+                constraints: [node.labels.region == us-west]
+        command: start --insecure --max-offset=5s --locality=region=us-west,zone=us-west-1b --join=roach-east-1,roach-west-1,roach-eu-central-1,roach-ap-south-1 --listen-addr=0.0.0.0:26257 --advertise-addr=roach-west-2
+        ports:
+            - "26205:26257"
+
+    roach-west-3:
+        <<: *crdb-common
+        deploy:
+            placement:
+                constraints: [node.labels.region == us-west]
+        command: start --insecure --max-offset=5s --locality=region=us-west,zone=us-west-1c --join=roach-east-1,roach-west-1,roach-eu-central-1,roach-ap-south-1 --listen-addr=0.0.0.0:26257 --advertise-addr=roach-west-3
+        ports:
+            - "26206:26257"
+
+    # REGION 3: EU-CENTRAL (Node 3)
+    roach-eu-central-1:
+        <<: *crdb-common
+        deploy:
+            placement:
+                constraints: [node.labels.region == eu-central]
+        command: start --insecure --max-offset=5s --locality=region=eu-central,zone=eu-central-1a --join=roach-east-1,roach-west-1,roach-eu-central-1,roach-ap-south-1 --listen-addr=0.0.0.0:26257 --advertise-addr=roach-eu-central-1
+        ports:
+            - "26207:26257"
+
+    roach-eu-central-2:
+        <<: *crdb-common
+        deploy:
+            placement:
+                constraints: [node.labels.region == eu-central]
+        command: start --insecure --max-offset=5s --locality=region=eu-central,zone=eu-central-1b --join=roach-east-1,roach-west-1,roach-eu-central-1,roach-ap-south-1 --listen-addr=0.0.0.0:26257 --advertise-addr=roach-eu-central-2
+        ports:
+            - "26208:26257"
+
+    roach-eu-central-3:
+        <<: *crdb-common
+        deploy:
+            placement:
+                constraints: [node.labels.region == eu-central]
+        command: start --insecure --max-offset=5s --locality=region=eu-central,zone=eu-central-1c --join=roach-east-1,roach-west-1,roach-eu-central-1,roach-ap-south-1 --listen-addr=0.0.0.0:26257 --advertise-addr=roach-eu-central-3
+        ports:
+            - "26209:26257"
+
+    # REGION 4: AP-SOUTH (Node 4)
+    roach-ap-south-1:
+        <<: *crdb-common
+        deploy:
+            placement:
+                constraints: [node.labels.region == ap-south]
+        command: start --insecure --max-offset=5s --locality=region=ap-south,zone=ap-south-1a --join=roach-east-1,roach-west-1,roach-eu-central-1,roach-ap-south-1 --listen-addr=0.0.0.0:26257 --advertise-addr=roach-ap-south-1
+        ports:
+            - "26210:26257"
+
+    roach-ap-south-2:
+        <<: *crdb-common
+        deploy:
+            placement:
+                constraints: [node.labels.region == ap-south]
+        command: start --insecure --max-offset=5s --locality=region=ap-south,zone=ap-south-1b --join=roach-east-1,roach-west-1,roach-eu-central-1,roach-ap-south-1 --listen-addr=0.0.0.0:26257 --advertise-addr=roach-ap-south-2
+        ports:
+            - "26211:26257"
+
+    roach-ap-south-3:
+        <<: *crdb-common
+        deploy:
+            placement:
+                constraints: [node.labels.region == ap-south]
+        command: start --insecure --max-offset=5s --locality=region=ap-south,zone=ap-south-1c --join=roach-east-1,roach-west-1,roach-eu-central-1,roach-ap-south-1 --listen-addr=0.0.0.0:26257 --advertise-addr=roach-ap-south-3
+        ports:
+            - "26212:26257"
