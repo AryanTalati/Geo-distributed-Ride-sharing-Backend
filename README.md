@@ -1,122 +1,95 @@
-# Geo-Distributed Ride-Sharing Database System
+# Geo-Distributed Ride-Sharing Backend
 
-### You can either run locally or on cloud. This project is designed to be run on cloud.
+A ride-sharing backend that keeps serving riders and drivers when a server, a zone or an entire AWS region goes down. Data is partitioned by region so most reads stay local, and CockroachDB's RAFT consensus handles failover.
 
-## Run Locally
+Built for the Distributed Database Systems course at Arizona State University (Oct to Dec 2025).
 
-## Setup Python Project
+**Demo video:** https://www.youtube.com/watch?v=qZhQthkY2vI
 
-Create a virtual environment:
+> **Attribution:** This was a team project. My contributions: [FILL IN, e.g. cluster topology and Docker Swarm deployment, region-aware partitioning, fault-injection testing, benchmarks].
 
-```bash
-python -m venv venv
+## Results
+
+Measured on the cloud deployment across four AWS regions with 340K+ records.
+
+| Metric | Result |
+| --- | --- |
+| Throughput | 540 TPS |
+| Local (in-region) reads | 4 ms |
+| Cross-region writes | 113 ms |
+| Failover time | ~3 seconds |
+| Fault scenarios tested | 50+, including full region and zone outages |
+
+## Architecture
+
+12 CockroachDB nodes: three replicas per host, on four Ubuntu EC2 instances, one in each AWS region. Docker Swarm connects the hosts over an overlay network, and each node is labeled with its region so the database knows where it physically sits.
+
+```mermaid
+flowchart LR
+    API[FastAPI server] --> E
+    subgraph E[us-east-1, N. Virginia]
+        E1[(3 CockroachDB replicas)]
+    end
+    subgraph W[us-west-1, N. California]
+        W1[(3 CockroachDB replicas)]
+    end
+    subgraph EU[eu-central-1, Frankfurt]
+        EU1[(3 CockroachDB replicas)]
+    end
+    subgraph AP[ap-south-1, Mumbai]
+        AP1[(3 CockroachDB replicas)]
+    end
+    E1 <-->|RAFT| W1
+    E1 <-->|RAFT| EU1
+    E1 <-->|RAFT| AP1
 ```
 
-Activate the virtual environment:
+- **Region-aware partitioning:** rides and users live in the region they belong to, so reads are served locally.
+- **Replication:** synchronous within a region, asynchronous across regions.
+- **Failover:** RAFT elects a new leader when a node or region drops, with no manual intervention.
 
-On Windows:
+**Tech stack:** Python, FastAPI, CockroachDB, MongoDB, Docker, Docker Swarm, AWS EC2 (Ubuntu)
 
-```bash
-venv\Scripts\activate
-```
+## Run locally
 
-On Linux/Mac:
+1. Create and activate a virtual environment, then install dependencies:
 
-```bash
-source venv/bin/activate
-```
+   ```bash
+   python -m venv venv
+   source venv/bin/activate        # Windows: venv\Scripts\activate
+   pip install -r requirements.txt
+   ```
 
-Install dependencies:
+2. Start the FastAPI server. The API runs at http://localhost:8000.
 
-```bash
-pip install -r requirements.txt
-```
+   ```bash
+   fastapi dev server/main.py
+   ```
 
-## Run FastAPI Server
+3. Start the CockroachDB containers and initialize the cluster (once):
 
-Start the FastAPI development server:
+   ```bash
+   docker-compose up -d
+   docker exec -it roach-east-1 ./cockroach init --insecure
+   ```
 
-```bash
-fastapi dev server/main.py
-```
+   The CockroachDB dashboard is at http://localhost:8080.
 
-The API will be available at `http://localhost:8000`
+4. Create the database and assign regions (see [Create the database and regions](#create-the-database-and-regions)).
 
-## Initialize the CockroachDB Clusters
+> The `--insecure` flag disables TLS and authentication. It keeps local setup simple and should not be used for a real deployment.
 
-Start docker container:
+## Environment configuration
 
-```bash
-docker-compose up -d
-```
-
-Initialize the cluster (Run this once):
-
-```bash
-docker exec -it roach-east-1 ./cockroach init --insecure
-```
-
-Open `localhost:8080` in browser to visualize the CockroachDB dashboard.
-
-## Create Database and Assign Regions
-
-Open CockroachDB shell inside the Docker container:
-
-```bash
-docker exec -it roach-east-1 ./cockroach sql --insecure
-```
-
-You need an enterprise license to enable multi-region features in CockroachDB.
-
-Set the license key in roach shell:
-
-```sql
-SET CLUSTER SETTING enterprise.license = 'YOUR-CRDB-KEY-HERE';
-```
-
-Create Database:
-
-```sql
-CREATE DATABASE rideshare;
-```
-
-Assign a primary region:
-
-```sql
-ALTER DATABASE rideshare PRIMARY REGION "us-east";
-```
-
-Assign secondary regions:
-
-```sql
-ALTER DATABASE rideshare ADD REGION "us-west";
-ALTER DATABASE rideshare ADD REGION "eu-central";
-ALTER DATABASE rideshare ADD REGION "ap-south";
-```
-
-## Environment Configuration
-
-The system supports two environments: `local` and `cloud`. Configure the environment using environment variables.
-
-### Setup Environment Variables
-
-Create a `.env` file from the sample:
+Copy the sample file and set `ENVIRONMENT` to `local` or `cloud`:
 
 ```bash
 cp .env.sample .env
 ```
 
-Edit the `.env` file and set the appropriate values:
+For the cloud environment, also set:
 
-**For Local Environment:**
-
-```bash
-ENVIRONMENT=local
 ```
-
-**For Cloud Environment:**
-
-```bash
 ENVIRONMENT=cloud
 US_EAST_HOST=your-us-east-host.com
 US_EAST_PORT=26257
@@ -131,13 +104,7 @@ DB_USER=your_username
 DB_PASSWORD=your_password
 ```
 
-Load environment variables (if using python-dotenv):
-
-```bash
-pip install python-dotenv
-```
-
-Then add this at the top of your scripts or export variables manually:
+Load the variables with `python-dotenv`, or export them manually:
 
 ```bash
 export $(cat .env | xargs)
@@ -149,50 +116,20 @@ On Windows PowerShell:
 Get-Content .env | ForEach-Object { if ($_ -match '^([^=]+)=(.*)$') { [Environment]::SetEnvironmentVariable($matches[1], $matches[2], 'Process') } }
 ```
 
-## Generate Data
-
-Generate sample data:
+## Generate and load data
 
 ```bash
-python data_generation.py
-```
-
-Note: When `ENVIRONMENT=cloud`, the script generates data in lakhs (hundreds of thousands) per region. For local environment, it generates smaller test datasets.
-
-## Load Data
-
-Load sample data:
-
-```bash
-python load_generated_data.py
-```
-
-To delete data and load again:
-
-```bash
-python load_generated_data.py --clear
-```
-
-To just delete data from database:
-
-```bash
+python data_generation.py              # cloud: hundreds of thousands of rows per region; local: a small test set
+python load_generated_data.py          # load
+python load_generated_data.py --clear  # delete and reload
 python load_generated_data.py --delete-only
 ```
 
-## Run on Cloud
+## Run on AWS
 
-### Setup EC2 Instances
+### 1. Launch EC2 instances
 
-Launch 4 EC2 instances in different AWS regions:
-
--   **us-east-1** (US East - N. Virginia)
--   **us-west-1** (US West - N. California)
--   **eu-central-1** (Europe - Frankfurt)
--   **ap-south-1** (Asia Pacific - Mumbai)
-
-On each EC2 instance:
-
-1. Install Docker:
+Launch one Ubuntu EC2 instance in each region: `us-east-1`, `us-west-1`, `eu-central-1`, `ap-south-1`. On each one, install Docker:
 
 ```bash
 sudo apt-get update
@@ -200,129 +137,66 @@ sudo apt-get install -y docker.io
 sudo usermod -aG docker $USER
 ```
 
-2. Configure Security Groups for each EC2 instance:
+Open these ports in each security group, allowing inbound traffic from the other instances' private IPs:
 
-Open ports:
+| Port | Purpose |
+| --- | --- |
+| 2377 | Docker Swarm management |
+| 7946 | Docker Swarm node communication |
+| 4789 | Docker Swarm overlay network |
+| 26257 | CockroachDB |
+| 8080 | CockroachDB Admin UI |
+| 22 | SSH |
 
--   `2377` (Docker Swarm management)
--   `7946` (Docker Swarm node communication)
--   `4789` (Docker Swarm overlay network)
--   `26257` (CockroachDB)
--   `8080` (CockroachDB Admin UI)
--   `22` (SSH)
+### 2. Set up Docker Swarm
 
-Allow inbound traffic from other EC2 instances' private IPs.
-
-### Setup Docker Swarm
-
-On the first EC2 instance (us-east-1), initialize Docker Swarm:
+On the `us-east-1` instance:
 
 ```bash
 docker swarm init --advertise-addr <PUBLIC_IP_NODE_1>
 ```
 
-Save the join token command that is displayed.
-
-On the other three EC2 instances, join the swarm:
+On the other three instances, run the join command it prints:
 
 ```bash
-docker swarm join \
-  --token <YOUR_TOKEN> \
-  --advertise-addr <PUBLIC_IP_NODE_<N>> \
-  <PUBLIC-IP-NODE-1>:2377
+docker swarm join --token <YOUR_TOKEN> --advertise-addr <PUBLIC_IP_NODE_N> <PUBLIC_IP_NODE_1>:2377
 ```
 
-Verify all nodes are connected:
+Check that all four nodes joined with `docker node ls`, then label each node with its region:
 
 ```bash
-docker node ls
+docker node update --label-add region=us-east <NODE-1-ID>
+docker node update --label-add region=us-west <NODE-2-ID>
+docker node update --label-add region=eu-central <NODE-3-ID>
+docker node update --label-add region=ap-south <NODE-4-ID>
 ```
 
-Now we need to tell docker which node represents which geographic region. This allows database to know where it is physically located.
-
-```bash
-docker node update --label-add region=us-east roach-east-1 <NODE-1-ID>
-docker node update --label-add region=us-west roach-west-1 <NODE-2-ID>
-docker node update --label-add region=eu-central roach-eu-central-1 <NODE-3-ID>
-docker node update --label-add region=ap-south roach-ap-south-1 <NODE-4-ID>
-```
-
-Create a docker file:
-
-```bash
-nano docker-stack.yml
-```
-
-Copy and paste the docker-stack.yml file content.
-
-Deploy the stack:
+### 3. Deploy the stack
 
 ```bash
 docker stack deploy -c docker-stack.yml rideshare
-```
-
-Verify the stack is deployed:
-
-```bash
 docker stack ps rideshare
 ```
 
-Initialize the cluster:
-
-```bash
-    docker ps | grep roach-east-1
-```
-
-Grab the container ID and initialize the cluster
-
-```bash
-docker exec -it <CONTAINER_ID> ./cockroach init --insecure
-```
-
-### Setup regions
-
-Get a container ID
+Initialize the cluster from the `roach-east-1` container:
 
 ```bash
 docker ps | grep roach-east-1
+docker exec -it <CONTAINER_ID> ./cockroach init --insecure
 ```
 
-Enter SQL
+## Create the database and regions
 
-```bash
-docker exec -it <CONTAINER_ID> ./cockroach sql --insecure
-```
-
-You need an enterprise license to enable multi-region features in CockroachDB.
-
-Set the license key in roach shell:
+Open a SQL shell in the `roach-east-1` container (`docker exec -it <CONTAINER_ID> ./cockroach sql --insecure`). Multi-region features need a CockroachDB enterprise license.
 
 ```sql
 SET CLUSTER SETTING enterprise.license = 'YOUR-CRDB-KEY-HERE';
-```
 
-Create Database:
-
-```sql
 CREATE DATABASE rideshare;
-```
-
-Assign a primary region:
-
-```sql
 ALTER DATABASE rideshare PRIMARY REGION "us-east";
-```
-
-Assign secondary regions:
-
-```sql
 ALTER DATABASE rideshare ADD REGION "us-west";
 ALTER DATABASE rideshare ADD REGION "eu-central";
 ALTER DATABASE rideshare ADD REGION "ap-south";
-```
 
-Verify the regions are assigned:
-
-```sql
 SHOW REGIONS FROM DATABASE rideshare;
 ```
